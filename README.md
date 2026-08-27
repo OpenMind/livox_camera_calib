@@ -108,6 +108,15 @@ ros2 launch livox_camera_calib bag_to_pcd.launch.py \
     pcd_file:=/path/to/0.pcd is_custom_msg:=false
 ```
 Set `is_custom_msg:=true` if the topic carries `livox_ros_driver2/msg/CustomMsg`.
+
+To pull the matching still image out of the same bag (no `image_view` needed):
+```
+python3 tools/bag_to_image.py /path/to/bag_dir \
+    --topic /camera/color/image_raw --output /path/to/image/0.png
+```
+By default it saves the middle frame; use `--index N` to pick another, or
+`--all` to dump every frame into a directory.
+
 ### 4.2 Modify the **calib.yaml**
 Change the data path to your local data path.
 Provide the instrinsic matrix and distor coeffs for your camera.
@@ -135,5 +144,18 @@ Also worth retuning for a non-Livox sensor: `Color.intensity_threshold`
 discards most points), and `Voxel.size` / `Plane.min_points_size` /
 `Ransac.dis_threshold`, which were tuned for Livox Avia point density.
 
-### 4.4 Use multi scenes calibration
+### 4.4 Running headless (SSH, no display)
+Both the OpenCV preview windows and RViz abort when they cannot reach a display
+server, which used to kill the calibration over a plain SSH session. The nodes
+now detect this: window calls become no-ops when neither `DISPLAY` nor
+`WAYLAND_DISPLAY` is set, the launch files skip RViz (override with
+`use_rviz:=true`), and the final "push enter to publish again" loop publishes
+once and exits when stdin is not a terminal. Force the windows on or off with
+the `common.enable_gui` parameter.
+
+Since there is nothing to look at in that mode, set `common.debug_img_dir` in
+the params file: the projection with the initial extrinsic is written there as
+`init.png` and the optimized one as `opt.png`.
+
+### 4.5 Use multi scenes calibration
 Change the params in **multi_calib.yaml**, name the image file and pcd file from 0 to (data_num-1).

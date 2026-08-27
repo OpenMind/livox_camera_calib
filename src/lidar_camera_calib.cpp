@@ -183,8 +183,8 @@ void roughCalib(Calibration &calibra, Vector6d &calib_params,
                             calibra.rgb_egde_cloud_, calibra.plane_line_cloud_,
                             pnp_list);
           cv::Mat projection_img = calibra.getProjectionImg(calib_params);
-          cv::imshow("Rough Optimization", projection_img);
-          cv::waitKey(50);
+          display::imshow("Rough Optimization", projection_img);
+          display::waitKey(50);
         }
       }
     }
@@ -199,6 +199,15 @@ int main(int argc, char **argv) {
   pcd_file = node->declare_parameter<string>("common.pcd_file", "");
   result_file = node->declare_parameter<string>("common.result_file", "");
   debug_img_dir = node->declare_parameter<string>("common.debug_img_dir", "");
+  // Defaults to whether a display is actually reachable, so the node runs
+  // unattended over SSH. Set it explicitly to override the detection.
+  display::setEnabled(
+      node->declare_parameter<bool>("common.enable_gui", display::enabled()));
+  if (!display::enabled()) {
+    RCLCPP_INFO(node->get_logger(),
+                "No display detected, running headless. Set "
+                "'common.debug_img_dir' to inspect the projected images.");
+  }
   std::cout << "pcd_file path:" << pcd_file << std::endl;
   camera_matrix =
       node->declare_parameter<vector<double>>("camera.camera_matrix",
@@ -270,18 +279,18 @@ int main(int argc, char **argv) {
   pub_cloud.header.frame_id = "livox";
   calibra.init_rgb_cloud_pub_->publish(pub_cloud);
   cv::Mat init_img = calibra.getProjectionImg(calib_params);
-  cv::imshow("Initial extrinsic", init_img);
+  display::imshow("Initial extrinsic", init_img);
   if (!debug_img_dir.empty()) {
     cv::imwrite(debug_img_dir + "/init.png", init_img);
   }
-  cv::waitKey(1000);
+  display::waitKey(1000);
 
   if (use_rough_calib) {
     roughCalib(calibra, calib_params, DEG2RAD(0.1), 50);
   }
   cv::Mat test_img = calibra.getProjectionImg(calib_params);
-  cv::imshow("After rough extrinsic", test_img);
-  cv::waitKey(1000);
+  display::imshow("After rough extrinsic", test_img);
+  display::waitKey(1000);
   int iter = 0;
   // Maximum match distance threshold: 15 pixels
   // If initial extrinsic lead to error over 15 pixels, the algorithm will not
@@ -306,8 +315,8 @@ int main(int argc, char **argv) {
                 << " pnp size:" << vpnp_list.size() << std::endl;
 
       cv::Mat projection_img = calibra.getProjectionImg(calib_params);
-      cv::imshow("Optimization", projection_img);
-      cv::waitKey(100);
+      display::imshow("Optimization", projection_img);
+      display::waitKey(100);
       Eigen::Vector3d euler_angle(calib_params[0], calib_params[1],
                                   calib_params[2]);
       Eigen::Matrix3d opt_init_R;
@@ -402,11 +411,11 @@ int main(int argc, char **argv) {
   }
   outfile << 0 << "," << 0 << "," << 0 << "," << 1 << std::endl;
   cv::Mat opt_img = calibra.getProjectionImg(calib_params);
-  cv::imshow("Optimization result", opt_img);
+  display::imshow("Optimization result", opt_img);
   if (!debug_img_dir.empty()) {
     cv::imwrite(debug_img_dir + "/opt.png", opt_img);
   }
-  cv::waitKey(1000);
+  display::waitKey(1000);
   Eigen::Matrix3d init_rotation;
   init_rotation << 0, -1.0, 0, 0, 0, -1.0, 1, 0, 0;
   Eigen::Matrix3d adjust_rotation;
@@ -416,6 +425,8 @@ int main(int argc, char **argv) {
   // ","
   //         << RAD2DEG(adjust_euler[2]) << "," << 0 << "," << 0 << "," << 0
   //         << std::endl;
+  RCLCPP_INFO_STREAM(node->get_logger(),
+                     "Extrinsic saved to " << result_file);
   while (rclcpp::ok()) {
     sensor_msgs::msg::PointCloud2 pub_cloud;
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr rgb_cloud(
@@ -429,6 +440,11 @@ int main(int argc, char **argv) {
         cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", calibra.image_)
             .toImageMsg();
     calibra.image_pub_->publish(*img_msg);
+    // Without a terminal there is nobody to press enter, and getchar() would
+    // spin on EOF, so publish the colored cloud once and exit.
+    if (!display::interactive()) {
+      break;
+    }
     std::cout << "push enter to publish again" << std::endl;
     getchar();
   }

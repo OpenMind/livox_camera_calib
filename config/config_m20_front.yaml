@@ -1,0 +1,61 @@
+%YAML:1.0
+
+# Scene config for the DEEPRobotics M20 front LiDAR + Intel RealSense D435i
+# color camera. Derived from config_outdoor.yaml.
+
+# Topic name in the rosbag
+PointCloudTopic: "/lidar_points_front"
+ImageTopic: "/camera/camera/color/image_raw"
+
+# Lidar Data type(custom msg or pointcloud2)
+Data.custom_msg: 0
+
+# Initial extrinsic (LiDAR -> camera, i.e. p_cam = R * p_lidar + t).
+#
+# Derived from the measured D435i extrinsic in the *fused* LiDAR frame
+# (2026-08-26):
+#   Rcl = [-0.030018 -0.999401 -0.017245
+#          -0.094445  0.020012 -0.995329
+#           0.995077 -0.028249 -0.094990]
+#   Pcl = [ 0.042863  0.224914 -0.234539]
+# which puts the camera at (0.255913, 0.031711, 0.202324) m in the fused
+# frame. The M20 manual places the front LiDAR at (320.28, 0, -13) mm in the
+# body frame, and the fused frame is body-aligned, so the camera sits at
+# (-0.064367, 0.031711, 0.215324) m in the front-LiDAR frame. The rotation is
+# unchanged (both frames are body-aligned) and the translation becomes
+#   Pcl_front = -R * p_cam_in_front = [0.033473, 0.207604, 0.085399]
+ExtrinsicMat: !!opencv-matrix
+  rows: 4
+  cols: 4
+  dt: d
+  data: [-0.030018, -0.999401, -0.017245,  0.033473,
+         -0.094445,  0.020012, -0.995329,  0.207604,
+          0.995077, -0.028249, -0.094990,  0.085399,
+          0.0,       0.0,       0.0,       1.0]
+
+# Params for Canny Edge Extraction
+Canny.gray_threshold: 20
+Canny.len_threshold: 200
+
+# Params for Voxel Cutting & Plane Fitting & Edge Extraction
+Voxel.size: 1.0
+Voxel.down_sample_size: 0.02
+Plane.min_points_size: 60
+Plane.normal_theta_min: 30
+Plane.normal_theta_max: 150
+Plane.max_size: 5
+Ransac.dis_threshold: 0.015
+Ransac.iter_num: 200
+Edge.min_dis_threshold: 0.03
+Edge.max_dis_threshold: 0.06
+
+# Params for color point clouds
+Color.dense: 1
+Color.intensity_threshold: 10
+
+# Params for projecting the cloud into the image
+Projection.min_depth: 2.5
+Projection.max_depth: 50.0
+# The M20 front LiDAR has a wide FOV, so reject anything at or behind the
+# camera plane before projecting.
+Projection.min_camera_depth: 0.1

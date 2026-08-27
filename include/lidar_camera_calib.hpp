@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "cv_bridge_compat.h"
+#include "display.h"
 #include "livox_camera_calib/msg/custom_msg.hpp"
 #include <Eigen/Core>
 #include <fstream>
@@ -1164,8 +1165,8 @@ void Calibration::buildVPnp(
   if (show_residual) {
     cv::Mat residual_img =
         getConnectImg(dis_threshold, cam_edge_cloud_2d, line_edge_cloud_2d);
-    cv::imshow("residual", residual_img);
-    cv::waitKey(100);
+    display::imshow("residual", residual_img);
+    display::waitKey(100);
   }
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(
       new pcl::search::KdTree<pcl::PointXYZ>());
@@ -1348,8 +1349,8 @@ void Calibration::buildPnp(
   if (show_residual) {
     cv::Mat residual_img =
         getConnectImg(dis_threshold, cam_edge_cloud_2d, line_edge_cloud_2d);
-    cv::imshow("residual", residual_img);
-    cv::waitKey(100);
+    display::imshow("residual", residual_img);
+    display::waitKey(100);
   }
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(
       new pcl::search::KdTree<pcl::PointXYZ>());
