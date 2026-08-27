@@ -1509,24 +1509,29 @@ cv::Mat Calibration::getProjectionImg(const Vector6d &extrinsic_params) {
   cv::Mat depth_projection_img;
   projection(extrinsic_params, raw_lidar_cloud_, INTENSITY, false,
              depth_projection_img);
-  cv::Mat map_img = cv::Mat::zeros(height_, width_, CV_8UC3);
-  for (int x = 0; x < map_img.cols; x++) {
-    for (int y = 0; y < map_img.rows; y++) {
-      uint8_t r, g, b;
-      float norm = depth_projection_img.at<uchar>(y, x) / 256.0;
-      mapJet(norm, 0, 1, r, g, b);
-      map_img.at<cv::Vec3b>(y, x)[0] = b;
-      map_img.at<cv::Vec3b>(y, x)[1] = g;
-      map_img.at<cv::Vec3b>(y, x)[2] = r;
-    }
-  }
   cv::Mat merge_img;
   if (image_.type() == CV_8UC3) {
-    merge_img = 0.5 * map_img + 0.8 * image_;
+    merge_img = image_.clone();
   } else {
-    cv::Mat src_rgb;
-    cv::cvtColor(image_, src_rgb, cv::COLOR_GRAY2BGR);
-    merge_img = 0.5 * map_img + 0.8 * src_rgb;
+    cv::cvtColor(image_, merge_img, cv::COLOR_GRAY2BGR);
+  }
+  // Blend the colormap only where a point actually projected. Tinting every
+  // pixel washes the whole frame in jet(0) blue, which hides the very
+  // alignment the image is meant to show.
+  for (int x = 0; x < merge_img.cols; x++) {
+    for (int y = 0; y < merge_img.rows; y++) {
+      const uchar value = depth_projection_img.at<uchar>(y, x);
+      if (value == 0) {
+        continue;
+      }
+      uint8_t r, g, b;
+      mapJet(value / 256.0, 0, 1, r, g, b);
+      cv::Vec3b &pixel = merge_img.at<cv::Vec3b>(y, x);
+      const uint8_t map_bgr[3] = {b, g, r};
+      for (int c = 0; c < 3; c++) {
+        pixel[c] = cv::saturate_cast<uchar>(0.5 * map_bgr[c] + 0.8 * pixel[c]);
+      }
+    }
   }
   return merge_img;
 }

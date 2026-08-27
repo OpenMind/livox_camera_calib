@@ -87,6 +87,16 @@ def read_scene_config(path):
         scalar('Projection.min_camera_depth', 0.1)
 
 
+def read_result_file(path):
+    """Read the 4x4 comma-separated matrix the calibration writes out."""
+    rows = [[float(v) for v in line.split(',')]
+            for line in open(path).read().splitlines() if line.strip()]
+    mat = np.asarray(rows)
+    if mat.shape != (4, 4):
+        sys.exit('%s is %s, expected a 4x4 matrix' % (path, mat.shape))
+    return mat[:3, :3], mat[:3, 3]
+
+
 def read_intrinsics(path):
     """Pull camera_matrix / dist_coeffs out of the ROS 2 params file."""
     text = open(path).read()
@@ -117,6 +127,10 @@ def main():
                    help='config_*.yaml holding ExtrinsicMat')
     p.add_argument('--params', required=True,
                    help='calib_*.yaml holding camera_matrix')
+    p.add_argument('--extrinsic',
+                   help='result file (extrinsic.txt) to use instead of the '
+                        'ExtrinsicMat in the scene config, so a finished '
+                        'calibration can be inspected without re-running it')
     p.add_argument('--output', default='check.png')
     p.add_argument('--stride', type=int, default=20,
                    help='keep every Nth point (default 20)')
@@ -133,6 +147,9 @@ def main():
     K, dist = read_intrinsics(args.params)
     R, t, min_depth, max_depth, min_cam_depth = read_scene_config(
         args.scene_config)
+    if args.extrinsic:
+        R, t = read_result_file(args.extrinsic)
+        print('using extrinsic from %s' % args.extrinsic)
     if args.min_depth is not None:
         min_depth = args.min_depth
     if args.max_depth is not None:
