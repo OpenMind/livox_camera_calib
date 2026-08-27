@@ -27,3 +27,13 @@ Plane.max_size: 8
 Ransac.dis_threshold: 0.02
 Edge.min_dis_threshold: 0.03
 Edge.max_dis_threshold: 0.06
+
+# Params for projecting the cloud into the image
+# Range from the LiDAR origin, in meters
+Projection.min_depth: 2.5
+Projection.max_depth: 50.0
+# Minimum depth along the camera optical axis. Points closer than this
+# (which includes everything behind the camera) are discarded before
+# projection. Required for LiDARs whose FOV extends behind the camera,
+# e.g. a 360 degree spinning sensor.
+Projection.min_camera_depth: 0.1

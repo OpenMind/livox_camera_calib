@@ -36,6 +36,19 @@
 
 #define calib
 #define online
+
+// cv::FileStorage yields an empty node for a missing key, and reading that
+// silently produces 0. Keep the compiled-in default instead so that config
+// files written for earlier versions of this package stay valid.
+template <typename T>
+void readOptionalSetting(const cv::FileStorage &settings,
+                         const std::string &key, T &value) {
+  const cv::FileNode node = settings[key];
+  if (!node.empty()) {
+    node >> value;
+  }
+}
+
 class Calibration {
 public:
   using PointCloud2 = sensor_msgs::msg::PointCloud2;
@@ -55,8 +68,15 @@ public:
 
   int rgb_edge_minLen_ = 200;
   int rgb_canny_threshold_ = 20;
-  int min_depth_ = 2.5;
-  int max_depth_ = 50;
+  // Range from the LiDAR origin used to gate points before projection.
+  float min_depth_ = 2.5;
+  float max_depth_ = 50;
+  // Minimum depth along the camera's optical axis. cv::projectPoints mirrors
+  // points with a negative camera depth back into the image, so for LiDARs
+  // whose FOV reaches behind the camera (e.g. a 360 degree spinning sensor)
+  // they must be rejected explicitly or they corrupt both the coloring and
+  // the edge correspondences.
+  float min_camera_depth_ = 0.1;
   int plane_max_size_ = 5;
   float detect_line_threshold_ = 0.02;
   int line_number_ = 0;
@@ -72,6 +92,10 @@ public:
   bool loadCalibConfig(const std::string &config_file);
   bool loadConfig(const std::string &configFile);
   bool checkFov(const cv::Point2d &p);
+  Eigen::Matrix3d extrinsicRotation(const Vector6d &extrinsic_params) const;
+  bool checkInFrontOfCamera(const Eigen::Matrix3d &rotation,
+                            const Eigen::Vector3d &translation, const float x,
+                            const float y, const float z) const;
   void colorCloud(const Vector6d &extrinsic_params, const int density,
                   const cv::Mat &rgb_img,
                   const pcl::PointCloud<pcl::PointXYZI>::Ptr &lidar_cloud,
@@ -287,6 +311,10 @@ bool Calibration::loadCalibConfig(const std::string &config_file) {
   direction_theta_min_ = cos(DEG2RAD(30.0));
   direction_theta_max_ = cos(DEG2RAD(150.0));
   color_intensity_threshold_ = fSettings["Color.intensity_threshold"];
+  readOptionalSetting(fSettings, "Projection.min_depth", min_depth_);
+  readOptionalSetting(fSettings, "Projection.max_depth", max_depth_);
+  readOptionalSetting(fSettings, "Projection.min_camera_depth",
+                      min_camera_depth_);
   return true;
 };
 
@@ -303,11 +331,16 @@ void Calibration::colorCloud(
     cv::cvtColor(input_image, rgb_img, cv::COLOR_GRAY2BGR);
   }
   std::vector<cv::Point3f> pts_3d;
+  const Eigen::Matrix3d rotation = extrinsicRotation(extrinsic_params);
+  const Eigen::Vector3d translation(extrinsic_params[3], extrinsic_params[4],
+                                    extrinsic_params[5]);
   for (size_t i = 0; i < lidar_cloud->size(); i += density) {
     pcl::PointXYZI point = lidar_cloud->points[i];
     float depth = sqrt(pow(point.x, 2) + pow(point.y, 2) + pow(point.z, 2));
-    if (depth > 2 && depth < 50 &&
-        point.intensity >= color_intensity_threshold_) {
+    if (depth > min_depth_ && depth < max_depth_ &&
+        point.intensity >= color_intensity_threshold_ &&
+        checkInFrontOfCamera(rotation, translation, point.x, point.y,
+                             point.z)) {
       pts_3d.emplace_back(cv::Point3f(point.x, point.y, point.z));
     }
   }
@@ -421,11 +454,16 @@ void Calibration::projection(
       Eigen::AngleAxisd(extrinsic_params[0], Eigen::Vector3d::UnitZ()) *
       Eigen::AngleAxisd(extrinsic_params[1], Eigen::Vector3d::UnitY()) *
       Eigen::AngleAxisd(extrinsic_params[2], Eigen::Vector3d::UnitX());
+  const Eigen::Matrix3d rotation = extrinsicRotation(extrinsic_params);
+  const Eigen::Vector3d translation(extrinsic_params[3], extrinsic_params[4],
+                                    extrinsic_params[5]);
   for (size_t i = 0; i < lidar_cloud->size(); i++) {
     pcl::PointXYZI point_3d = lidar_cloud->points[i];
     float depth =
         sqrt(pow(point_3d.x, 2) + pow(point_3d.y, 2) + pow(point_3d.z, 2));
-    if (depth > min_depth_ && depth < max_depth_) {
+    if (depth > min_depth_ && depth < max_depth_ &&
+        checkInFrontOfCamera(rotation, translation, point_3d.x, point_3d.y,
+                             point_3d.z)) {
       pts_3d.emplace_back(cv::Point3f(point_3d.x, point_3d.y, point_3d.z));
       intensity_list.emplace_back(lidar_cloud->points[i].intensity);
     }
@@ -639,6 +677,23 @@ bool Calibration::checkFov(const cv::Point2d &p) {
   } else {
     return false;
   }
+}
+
+Eigen::Matrix3d
+Calibration::extrinsicRotation(const Vector6d &extrinsic_params) const {
+  return Eigen::Matrix3d(
+      Eigen::AngleAxisd(extrinsic_params[0], Eigen::Vector3d::UnitZ()) *
+      Eigen::AngleAxisd(extrinsic_params[1], Eigen::Vector3d::UnitY()) *
+      Eigen::AngleAxisd(extrinsic_params[2], Eigen::Vector3d::UnitX()));
+}
+
+bool Calibration::checkInFrontOfCamera(const Eigen::Matrix3d &rotation,
+                                       const Eigen::Vector3d &translation,
+                                       const float x, const float y,
+                                       const float z) const {
+  const Eigen::Vector3d p_c =
+      rotation * Eigen::Vector3d(x, y, z) + translation;
+  return p_c(2) > min_camera_depth_;
 }
 
 void Calibration::initVoxel(
@@ -1040,9 +1095,27 @@ void Calibration::buildVPnp(
       Eigen::AngleAxisd(extrinsic_params[1], Eigen::Vector3d::UnitY()) *
       Eigen::AngleAxisd(extrinsic_params[2], Eigen::Vector3d::UnitX());
 
+  const Eigen::Matrix3d rotation = extrinsicRotation(extrinsic_params);
+  const Eigen::Vector3d translation(extrinsic_params[3], extrinsic_params[4],
+                                    extrinsic_params[5]);
+  // Filtering pts_3d breaks the 1:1 index mapping into plane_line_number_,
+  // so carry the line id of every kept point alongside it.
+  std::vector<int> pts_3d_line_number;
   for (size_t i = 0; i < lidar_line_cloud_3d->size(); i++) {
     pcl::PointXYZI point_3d = lidar_line_cloud_3d->points[i];
+    if (!checkInFrontOfCamera(rotation, translation, point_3d.x, point_3d.y,
+                              point_3d.z)) {
+      continue;
+    }
     pts_3d.emplace_back(cv::Point3d(point_3d.x, point_3d.y, point_3d.z));
+    pts_3d_line_number.push_back(
+        i < plane_line_number_.size() ? plane_line_number_[i] : 0);
+  }
+  if (pts_3d.empty()) {
+    RCLCPP_WARN_STREAM(logger_,
+                       "No LiDAR edge point falls in front of the camera; "
+                       "check the initial extrinsic.");
+    return;
   }
   cv::Mat camera_matrix =
       (cv::Mat_<double>(3, 3) << fx_, 0.0, cx_, 0.0, fy_, cy_, 0.0, 0.0, 1.0);
@@ -1081,7 +1154,7 @@ void Calibration::buildVPnp(
     if (p.x > 0 && p.x < width_ && pts_2d[i].y > 0 && pts_2d[i].y < height_) {
       if (img_pts_container[pts_2d[i].y][pts_2d[i].x].size() == 0) {
         line_edge_cloud_2d->points.push_back(p);
-        line_edge_cloud_2d_number.push_back(plane_line_number_[i]);
+        line_edge_cloud_2d_number.push_back(pts_3d_line_number[i]);
         img_pts_container[pts_2d[i].y][pts_2d[i].x].push_back(pi_3d);
       } else {
         img_pts_container[pts_2d[i].y][pts_2d[i].x].push_back(pi_3d);
@@ -1222,9 +1295,23 @@ void Calibration::buildPnp(
       Eigen::AngleAxisd(extrinsic_params[0], Eigen::Vector3d::UnitZ()) *
       Eigen::AngleAxisd(extrinsic_params[1], Eigen::Vector3d::UnitY()) *
       Eigen::AngleAxisd(extrinsic_params[2], Eigen::Vector3d::UnitX());
+  const Eigen::Matrix3d rotation = extrinsicRotation(extrinsic_params);
+  const Eigen::Vector3d translation(extrinsic_params[3], extrinsic_params[4],
+                                    extrinsic_params[5]);
   for (size_t i = 0; i < lidar_line_cloud_3d->size(); i++) {
     pcl::PointXYZI point_3d = lidar_line_cloud_3d->points[i];
+    if (!checkInFrontOfCamera(rotation, translation, point_3d.x, point_3d.y,
+                              point_3d.z)) {
+      continue;
+    }
     pts_3d.emplace_back(cv::Point3f(point_3d.x, point_3d.y, point_3d.z));
+  }
+  if (pts_3d.empty()) {
+    RCLCPP_WARN_STREAM(logger_,
+                       "No LiDAR edge point falls in front of the camera; "
+                       "check the initial extrinsic.");
+    pnp_list.clear();
+    return;
   }
   cv::Mat camera_matrix =
       (cv::Mat_<double>(3, 3) << fx_, s_, cx_, 0.0, fy_, cy_, 0.0, 0.0, 1.0);

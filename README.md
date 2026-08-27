@@ -26,6 +26,12 @@ ROS 2 Humble, Iron or Jazzy. [ROS 2 Installation](https://docs.ros.org/en/rollin
     sudo apt-get install ros-$ROS_DISTRO-cv-bridge ros-$ROS_DISTRO-pcl-conversions ros-$ROS_DISTRO-rosbag2 ros-$ROS_DISTRO-rviz2
 ```
 
+Or let rosdep resolve everything, including Ceres, PCL, OpenCV and Eigen:
+
+```
+    rosdep install --from-paths . --ignore-src -r -y
+```
+
 > This is the ROS 2 branch. The `livox_ros_driver` `CustomMsg` is regenerated
 > inside this package (`msg/CustomMsg.msg`), so no external Livox driver package
 > is needed to read bags that contain it.
@@ -34,7 +40,9 @@ ROS 2 Humble, Iron or Jazzy. [ROS 2 Installation](https://docs.ros.org/en/rollin
 Follow [Eigen Installation](http://eigen.tuxfamily.org/index.php?title=Main_Page)
 
 ### 1.3 **Ceres Solver**
-Follow [Ceres Installation](http://ceres-solver.org/installation.html).
+`sudo apt-get install libceres-dev`, or follow [Ceres Installation](http://ceres-solver.org/installation.html).
+Ceres 1.x through 2.2 are supported; the quaternion parameterization removed in
+Ceres 2.2 is selected at compile time.
 
 ### 1.4 **PCL**
 Follow [PCL Installation](http://www.pointclouds.org/downloads/linux.html). (Our code is tested with PCL1.7)
@@ -110,5 +118,22 @@ keys live under `<node_name>` -> `ros__parameters`, and the node names are
 (**config_outdoor.yaml**, **config_indoor.yaml**) are OpenCV `FileStorage`
 files and keep their original format.
 
-### 4.3 Use multi scenes calibration
+### 4.3 Wide field-of-view LiDARs
+`cv::projectPoints` mirrors points that sit behind the camera back into the
+image, so for a LiDAR whose FOV extends behind the camera (a 360 degree
+spinning sensor such as a RoboSense Airy, rather than a forward-facing Livox)
+the rear of the cloud would otherwise be projected on top of the front and
+corrupt both the colored cloud and the edge correspondences driving the
+optimization. Points are therefore rejected unless their depth along the camera
+optical axis exceeds `Projection.min_camera_depth`, alongside the existing
+LiDAR-range gate `Projection.min_depth` / `Projection.max_depth`. All three live
+in the scene config (**config_outdoor.yaml** / **config_indoor.yaml**) and fall
+back to their built-in defaults when absent, so older config files keep working.
+
+Also worth retuning for a non-Livox sensor: `Color.intensity_threshold`
+(intensity scaling is vendor specific, and too high a threshold silently
+discards most points), and `Voxel.size` / `Plane.min_points_size` /
+`Ransac.dis_threshold`, which were tuned for Livox Avia point density.
+
+### 4.4 Use multi scenes calibration
 Change the params in **multi_calib.yaml**, name the image file and pcd file from 0 to (data_num-1).
