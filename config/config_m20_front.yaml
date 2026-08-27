@@ -58,8 +58,12 @@ Color.dense: 1
 Color.intensity_threshold: 10
 
 # Params for projecting the cloud into the image
-Projection.min_depth: 2.5
-Projection.max_depth: 50.0
+# Indoor scene: the outdoor default of 2.5 m discards everything in the middle
+# of the room (cabinet, boxes, the robot's own mast), which is most of the
+# usable edge geometry. 1.0 m keeps that while still excluding the sensor's
+# near blind zone.
+Projection.min_depth: 1.0
+Projection.max_depth: 30.0
 # The M20 front LiDAR has a wide FOV, so reject anything at or behind the
 # camera plane before projecting.
 Projection.min_camera_depth: 0.1
