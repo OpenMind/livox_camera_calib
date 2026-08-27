@@ -12,25 +12,29 @@ Data.custom_msg: 0
 
 # Initial extrinsic (LiDAR -> camera, i.e. p_cam = R * p_lidar + t).
 #
-# Derived from the measured D435i extrinsic in the *fused* LiDAR frame
-# (2026-08-26):
-#   Rcl = [-0.030018 -0.999401 -0.017245
-#          -0.094445  0.020012 -0.995329
-#           0.995077 -0.028249 -0.094990]
-#   Pcl = [ 0.042863  0.224914 -0.234539]
-# which puts the camera at (0.255913, 0.031711, 0.202324) m in the fused
-# frame. The M20 manual places the front LiDAR at (320.28, 0, -13) mm in the
-# body frame, and the fused frame is body-aligned, so the camera sits at
-# (-0.064367, 0.031711, 0.215324) m in the front-LiDAR frame. The rotation is
-# unchanged (both frames are body-aligned) and the translation becomes
-#   Pcl_front = -R * p_cam_in_front = [0.033473, 0.207604, 0.085399]
+# Composed from the measured D435i extrinsic in the *fused* LiDAR frame
+# (2026-08-26), which is the body frame:
+#   Rcl = [-0.030018 -0.999401 -0.017245      Pcl = [ 0.042863
+#          -0.094445  0.020012 -0.995329              0.224914
+#           0.995077 -0.028249 -0.094990]            -0.234539]
+# and the base_link -> front LiDAR transform read from /tf_static:
+#   R_bf = [0 0 1        t_bf = [0.320, 0, -0.013]
+#           0 -1 0
+#           1 0 0]
+# Note that frame is NOT body-aligned: the LiDAR's own +Z is body-forward and
+# its +X is body-up, so the rotation matters as much as the offset.
+#   p_cam = Rcl * (R_bf * p_front + t_bf) + Pcl
+#         = (Rcl * R_bf) * p_front + (Rcl * t_bf + Pcl)
+# The camera then sits at (0.215324, -0.031711, -0.064087) m in the
+# front-LiDAR frame with its optical axis along front-LiDAR +Z, i.e. looking
+# forward, as expected.
 ExtrinsicMat: !!opencv-matrix
   rows: 4
   cols: 4
   dt: d
-  data: [-0.030018, -0.999401, -0.017245,  0.033473,
-         -0.094445,  0.020012, -0.995329,  0.207604,
-          0.995077, -0.028249, -0.094990,  0.085399,
+  data: [-0.017245,  0.999401, -0.030018,  0.033481,
+         -0.995329, -0.020012, -0.094445,  0.207631,
+         -0.094990,  0.028249,  0.995077,  0.085121,
           0.0,       0.0,       0.0,       1.0]
 
 # Params for Canny Edge Extraction

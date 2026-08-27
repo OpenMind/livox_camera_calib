@@ -3,13 +3,13 @@
 # The top-level key must match the node name.
 lidar_camera_calib:
   ros__parameters:
-    # Data path. adjust them!
+    # Data path. Absolute paths, as recorded on the M20's onboard computer.
     common:
-      image_file: "/home/user/m20_calib/image/0.png"
-      pcd_file: "/home/user/m20_calib/pcd/0.pcd"
-      result_file: "/home/user/m20_calib/extrinsic.txt"
+      image_file: "/home/openmind/m20_calib/image/0.png"
+      pcd_file: "/home/openmind/m20_calib/pcd/0.pcd"
+      result_file: "/home/openmind/m20_calib/extrinsic.txt"
       # Optional: directory to dump init.png / opt.png. Leave empty to skip.
-      debug_img_dir: "/home/user/m20_calib"
+      debug_img_dir: "/home/openmind/m20_calib"
 
     # RealSense D435i color camera, 1280x720, straight from
     # /camera/camera/color/camera_info (2026-08-26): plumb_bob, no distortion.
@@ -22,5 +22,5 @@ lidar_camera_calib:
 
     # Calibration Parameters.!
     calib:
-      calib_config_file: "/home/user/ros2_ws/src/livox_camera_calib/config/config_m20_front.yaml"
+      calib_config_file: "/home/openmind/Documents/GitHub/livox_camera_calib/config/config_m20_front.yaml"
       use_rough_calib: false # the initial extrinsic below is already close
