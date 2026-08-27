@@ -1,17 +1,23 @@
-# Data path. adjust them!
-common:
-    image_file: "/home/ycj/data/calib/image/0.png"
-    pcd_file: "/home/ycj/data/calib/pcd/0.pcd"
-    result_file: "/home/ycj/data/calib/extrinsic.txt"
+# ROS 2 parameter file for the lidar_camera_calib node.
+# The top-level key must match the node name.
+lidar_camera_calib:
+  ros__parameters:
+    # Data path. adjust them!
+    common:
+      image_file: "/home/ycj/data/calib/image/0.png"
+      pcd_file: "/home/ycj/data/calib/pcd/0.pcd"
+      result_file: "/home/ycj/data/calib/extrinsic.txt"
+      # Optional: directory to dump init.png / opt.png. Leave empty to skip.
+      debug_img_dir: ""
 
-# Camera Parameters. Adjust them!
-camera:
-    camera_matrix: [1364.45, 0.0,      958.327,
-                0.0,     1366.46,  535.074,
-                0.0,     0.0,      1.0     ]
-    dist_coeffs: [0.0958277, -0.198233, -0.000147133, -0.000430056, 0.000000]
+    # Camera Parameters. Adjust them!
+    camera:
+      camera_matrix: [1364.45, 0.0,     958.327,
+                      0.0,     1366.46, 535.074,
+                      0.0,     0.0,     1.0]
+      dist_coeffs: [0.0958277, -0.198233, -0.000147133, -0.000430056, 0.0]
 
-# Calibration Parameters.!
-calib:
-    calib_config_file: "/home/ycj/catkin_ws/src/livox_camera_calib/config/config_outdoor.yaml"
-    use_rough_calib: true # set true if your initial_extrinsic is bad
+    # Calibration Parameters.!
+    calib:
+      calib_config_file: "/home/ycj/ros2_ws/src/livox_camera_calib/config/config_outdoor.yaml"
+      use_rough_calib: true # set true if your initial_extrinsic is bad

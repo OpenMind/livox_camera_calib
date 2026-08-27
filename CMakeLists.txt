@@ -1,58 +1,80 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.8)
 project(livox_camera_calib)
 
-## Compile as C++14, supported in ROS Kinetic and newer
-add_compile_options(-std=c++14)
-#SET(CMAKE_BUILD_TYPE "Debug")
-#SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb")
-#SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS
-  cv_bridge
-  pcl_conversions
-  pcl_ros
-  roscpp
-  rospy
-  sensor_msgs
-  std_msgs
-)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+endif()
 
-## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+
 find_package(PCL REQUIRED)
-find_package(OpenCV)
-find_package(Threads)
+find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(Threads REQUIRED)
 find_package(Ceres REQUIRED)
 
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
+# Livox CustomMsg is generated inside this package so that no external
+# livox driver package is required to read bags containing it.
+rosidl_generate_interfaces(${PROJECT_NAME}
+  msg/CustomPoint.msg
+  msg/CustomMsg.msg
+  DEPENDENCIES std_msgs
+)
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} rosidl_typesupport_cpp)
 
-catkin_package(
- CATKIN_DEPENDS roscpp rospy std_msgs
+set(dependencies
+  rclcpp
+  std_msgs
+  sensor_msgs
+  cv_bridge
+  pcl_conversions
+  rosbag2_cpp
 )
 
 include_directories(
-# include
-  ${catkin_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+)
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
+foreach(target lidar_camera_calib lidar_camera_multi_calib bag_to_pcd)
+  add_executable(${target} src/${target}.cpp)
+  ament_target_dependencies(${target} ${dependencies})
+  target_link_libraries(${target}
+    ${cpp_typesupport_target}
+    ${OpenCV_LIBS}
+    ${PCL_LIBRARIES}
+    ${CERES_LIBRARIES}
+    Threads::Threads
+  )
+endforeach()
+
+install(TARGETS
+  lidar_camera_calib
+  lidar_camera_multi_calib
+  bag_to_pcd
+  DESTINATION lib/${PROJECT_NAME}
 )
 
-add_executable(lidar_camera_calib src/lidar_camera_calib.cpp include/lidar_camera_calib.hpp)
-add_executable(lidar_camera_multi_calib src/lidar_camera_multi_calib.cpp include/lidar_camera_calib.hpp)
-add_executable(bag_to_pcd src/bag_to_pcd.cpp)
-target_link_libraries(lidar_camera_calib 
-  ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
+install(DIRECTORY launch config rviz_cfg
+  DESTINATION share/${PROJECT_NAME}
 )
 
-target_link_libraries(lidar_camera_multi_calib 
-  ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-)
-
-target_link_libraries(bag_to_pcd 
-  ${catkin_LIBRARIES}  ${PCL_LIBRARIES}
-)
+ament_export_dependencies(rosidl_default_runtime)
+ament_package()

@@ -1,6 +1,6 @@
 %YAML:1.0
 
-# Topic name in rosbag
+# Topic name in the rosbag
 PointCloudTopic: "/livox/lidar"
 ImageTopic: "/camera/color/image_raw"
 

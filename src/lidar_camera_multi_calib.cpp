@@ -1,6 +1,7 @@
 #include "ceres/ceres.h"
 #include "include/common.h"
 #include "include/lidar_camera_calib.hpp"
+#include <rclcpp/rclcpp.hpp>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -191,26 +192,37 @@ void roughCalib(std::vector<Calibration> &calibs, Vector6d &calib_params,
 }
 
 int main(int argc, char **argv) {
-  ros::init(argc, argv, "lidarCamCalib");
-  ros::NodeHandle nh;
-  ros::Rate loop_rate(0.1);
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<rclcpp::Node>("lidar_camera_multi_calib");
 
-  nh.param<string>("common/image_path", image_path, "");
-  nh.param<string>("common/pcd_path", pcd_path, "");
-  nh.param<string>("common/result_path", result_path, "");
-  nh.param<int>("common/data_num", data_num, 1);
-  nh.param<vector<double>>("camera/camera_matrix", camera_matrix,
-                           vector<double>());
-  nh.param<vector<double>>("camera/dist_coeffs", dist_coeffs, vector<double>());
-  nh.param<bool>("calib/use_rough_calib", use_rough_calib, false);
-  nh.param<string>("calib/calib_config_file", calib_config_file, "");
+  image_path = node->declare_parameter<string>("common.image_path", "");
+  pcd_path = node->declare_parameter<string>("common.pcd_path", "");
+  result_path = node->declare_parameter<string>("common.result_path", "");
+  data_num = node->declare_parameter<int>("common.data_num", 1);
+  camera_matrix = node->declare_parameter<vector<double>>("camera.camera_matrix",
+                                                          vector<double>{});
+  dist_coeffs = node->declare_parameter<vector<double>>("camera.dist_coeffs",
+                                                        vector<double>{});
+  use_rough_calib =
+      node->declare_parameter<bool>("calib.use_rough_calib", false);
+  calib_config_file =
+      node->declare_parameter<string>("calib.calib_config_file", "");
+
+  if (camera_matrix.size() < 9 || dist_coeffs.size() < 5) {
+    RCLCPP_ERROR(node->get_logger(),
+                 "camera.camera_matrix needs 9 values and camera.dist_coeffs "
+                 "needs 5; got %zu and %zu. Did you pass the params file?",
+                 camera_matrix.size(), dist_coeffs.size());
+    rclcpp::shutdown();
+    return -1;
+  }
 
   std::vector<Calibration> calibs;
-  for (size_t i = 0; i < data_num; i++) {
+  for (int i = 0; i < data_num; i++) {
     string image_file, pcd_file = "";
     image_file = image_path + "/" + std::to_string(i) + ".bmp";
     pcd_file = pcd_path + "/" + std::to_string(i) + ".pcd";
-    Calibration single_calib(image_file, pcd_file, calib_config_file);
+    Calibration single_calib(node, image_file, pcd_file, calib_config_file);
     single_calib.fx_ = camera_matrix[0];
     single_calib.cx_ = camera_matrix[2];
     single_calib.fy_ = camera_matrix[4];
@@ -234,7 +246,7 @@ int main(int argc, char **argv) {
   std::vector<PnPData> pnp_list;
   std::vector<VPnPData> vpnp_list;
 
-  ROS_INFO_STREAM("Finish prepare!");
+  RCLCPP_INFO_STREAM(node->get_logger(), "Finish prepare!");
   Eigen::Matrix3d R;
   Eigen::Vector3d T;
   inner << calibs[0].fx_, 0.0, calibs[0].cx_, 0.0, calibs[0].fy_, calibs[0].cy_,
@@ -277,7 +289,7 @@ int main(int argc, char **argv) {
 
       std::vector<std::vector<VPnPData>> vpnp_list_vect;
       int vpnp_size = 0;
-      for (size_t i = 0; i < data_num; i++) {
+      for (int i = 0; i < data_num; i++) {
         std::vector<VPnPData> vpnp_list;
         calibs[i].buildVPnp(calib_params, dis_threshold, true,
                             calibs[i].rgb_egde_cloud_,
@@ -309,13 +321,17 @@ int main(int argc, char **argv) {
       Eigen::Map<Eigen::Quaterniond> m_q = Eigen::Map<Eigen::Quaterniond>(ext);
       Eigen::Map<Eigen::Vector3d> m_t = Eigen::Map<Eigen::Vector3d>(ext + 4);
 
-      ceres::LocalParameterization *q_parameterization =
-          new ceres::EigenQuaternionParameterization();
       ceres::Problem problem;
 
-      problem.AddParameterBlock(ext, 4, q_parameterization);
+#if CERES_VERSION_MAJOR > 2 ||                                                 \
+    (CERES_VERSION_MAJOR == 2 && CERES_VERSION_MINOR >= 1)
+      problem.AddParameterBlock(ext, 4, new ceres::EigenQuaternionManifold());
+#else
+      problem.AddParameterBlock(ext, 4,
+                                new ceres::EigenQuaternionParameterization());
+#endif
       problem.AddParameterBlock(ext + 4, 3);
-      for (size_t i = 0; i < data_num; i++) {
+      for (int i = 0; i < data_num; i++) {
         for (auto val : vpnp_list_vect[i]) {
           ceres::CostFunction *cost_function;
           cost_function = vpnp_calib::Create(val);
@@ -363,7 +379,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  ros::Rate loop(0.5);
   // roughCalib(calibra, calib_params, DEG2RAD(0.01), 20);
 
   R = Eigen::AngleAxisd(calib_params[0], Eigen::Vector3d::UnitZ()) *
@@ -388,18 +403,18 @@ int main(int argc, char **argv) {
   // ","
   //         << RAD2DEG(adjust_euler[2]) << "," << 0 << "," << 0 << "," << 0
   //         << std::endl;
-  while (ros::ok()) {
-    sensor_msgs::PointCloud2 pub_cloud;
+  while (rclcpp::ok()) {
+    sensor_msgs::msg::PointCloud2 pub_cloud;
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr rgb_cloud(
         new pcl::PointCloud<pcl::PointXYZRGB>);
     calibs[0].colorCloud(calib_params, 5, calibs[0].image_,
                          calibs[0].raw_lidar_cloud_, rgb_cloud);
     pcl::toROSMsg(*rgb_cloud, pub_cloud);
     pub_cloud.header.frame_id = "livox";
-    calibs[0].rgb_cloud_pub_.publish(pub_cloud);
+    calibs[0].rgb_cloud_pub_->publish(pub_cloud);
     std::cout << "push enter to publish again" << std::endl;
     getchar();
-    /* code */
   }
+  rclcpp::shutdown();
   return 0;
 }
